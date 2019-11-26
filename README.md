@@ -10,7 +10,6 @@
 
 ## Currently reading
 
-* paper [link](https://arxiv.org/pdf/1905.02850.pdf)
 
 ## Questions on the implementation
-* How to manage varying size inputs? : [link](https://stackoverflow.com/questions/59039268/what-is-the-best-way-to-handle-inputs-in-graph-neural-networks)
+* SOLVED How to manage varying size inputs? : [link](https://stackoverflow.com/questions/59039268/what-is-the-best-way-to-handle-inputs-in-graph-neural-networks) 
