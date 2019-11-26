@@ -7,6 +7,7 @@
 * GNN definition (2) - paper : [link](https://arxiv.org/pdf/1810.00826.pdf)
 * GNN definition (3) - video : [link](https://youtu.be/USfNJNePDKQ)
 * GNN definition (4) - video : [link](https://slideslive.com/38917609/graph-neural-networks-and-graph-isomorphism)
+* Tuning hyper parameters - documentation : [link](https://scikit-learn.org/stable/modules/grid_search.html)
 
 ## Currently reading
 
