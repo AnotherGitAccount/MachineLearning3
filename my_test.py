@@ -10,6 +10,7 @@ from contextlib import contextmanager
 
 import pandas as pd
 import numpy as np
+from matplotlib import pyplot as plt
 from sklearn.tree import ExtraTreeClassifier
 from sklearn.utils import check_random_state
 from sklearn.naive_bayes import GaussianNB
