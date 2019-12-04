@@ -12,10 +12,15 @@ import pandas as pd
 import numpy as np
 from matplotlib import pyplot as plt
 from sklearn.tree import ExtraTreeClassifier
+from sklearn.tree import DecisionTreeClassifier
 from sklearn.utils import check_random_state
-from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import cross_val_score
+from sklearn.ensemble import BaggingClassifier
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.ensemble import AdaBoostClassifier
 
 from rdkit import Chem
 from rdkit.Chem import AllChem
@@ -139,6 +144,79 @@ def make_submission(y_predicted, auc_predicted, file_name="submission", date=Tru
             handle.write(line)
     return file_name
 
+def doKNN(X_LS, Y_LS):
+    #BEST = 52 d'après CV 10 fold
+
+    neighbors = [i for i in range(50, 57, 1)]
+    scores = []
+
+    for k in neighbors:
+        print(k)
+        estimator = KNeighborsClassifier(n_neighbors=k)
+        score = cross_val_score(estimator, X_LS, Y_LS, cv=10, scoring="roc_auc")
+        scores.append(np.mean(score))
+
+    plt.figure()
+    plt.plot(neighbors, scores, label="CV score")
+    plt.xlabel("Complexity of the Model")
+    plt.ylabel("Accuracy")
+    plt.legend()
+    plt.savefig("KNN_scores.pdf")
+    return
+
+def doBaggingKnn(X_LS, Y_LS):
+    #BEST = 52 d'après CV 10 fold
+    neighbors = [i for i in range(50, 57, 1)]
+    scores = []
+
+    estimator = BaggingClassifier(base_estimator=KNeighborsClassifier(n_neighbors=52))
+    score = cross_val_score(estimator, X_LS, Y_LS, cv=10, scoring="roc_auc")
+    scores.append(np.mean(score))
+
+    print(scores)
+    plt.figure()
+    plt.plot([52], scores, label="CV score")
+    plt.xlabel("Complexity of the Model")
+    plt.ylabel("Accuracy")
+    plt.legend()
+    plt.savefig("Bagging_KNN_CV.pdf")
+    return
+
+def doExtraTree(X_LS, Y_LS):
+    #max_depth = 5 
+    max_depths = [(i+1) for i in range(0, 35)]
+    scores = []
+
+    for depth in max_depths:
+        print(depth)
+        estimator = BaggingClassifier(base_estimator=ExtraTreeClassifier(max_depth=depth), n_estimators=100)
+        score = cross_val_score(estimator, X_LS, Y_LS, cv=10, scoring="roc_auc")
+        scores.append(np.mean(score))
+
+    plt.figure()
+    plt.plot(max_depths, scores, label="CV score")
+    plt.xlabel("Complexity of the Model")
+    plt.ylabel("Accuracy")
+    plt.legend()
+    plt.savefig("extraTree_scores.pdf")
+    return
+
+def doDecisionTree(X_LS, Y_LS):
+    max_depths = [50, 75, 100, 150, 200 , 300]
+    scores = []
+    for depth in max_depths:
+        print(depth)
+        estimator = AdaBoostClassifier(base_estimator=DecisionTreeClassifier(max_depth=15), n_estimators=depth)
+        score = cross_val_score(estimator, X_LS, Y_LS, cv=10, scoring="roc_auc")
+        scores.append(np.mean(score))
+
+    plt.figure()
+    plt.plot(max_depths, scores, label="CV score")
+    plt.xlabel("n_estimators of AdaBoostClassifier")
+    plt.ylabel("Accuracy")
+    plt.legend()
+    plt.savefig("DecisionTree_scores.pdf")
+    return
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Make a toy submission")
@@ -146,9 +224,6 @@ if __name__ == '__main__':
                         help="Path to the learning set as CSV file")
     parser.add_argument("--ts", default="data/test_set.csv",
                         help="Path to the test set as CSV file")
-    parser.add_argument("--gnb", action="store_true", default=False,
-                        help="Use a decision Gaussian Naive model (by default, "
-                             "make a random prediction)")
 
     args = parser.parse_args()
 
@@ -157,22 +232,23 @@ if __name__ == '__main__':
     # Load test data
     TS = load_from_csv(args.ts)
 
-    if args.gnb:
-        # -------------------------- Decision Tree --------------------------- #
+    method = "DT"
 
+    if method is "KNN":
+        # -------------------------- Decision Tree --------------------------- #
         # LEARNING
         # Create fingerprint features and output
+        print("KNN CLASSIFIER")
         with measure_time("Creating fingerprint"):
             X_LS = create_fingerprints(LS["SMILES"].values)
         y_LS = LS["ACTIVE"].values
 
         # Build the model
-        model = RandomForestClassifier(n_estimators=2000, max_depth=15, min_samples_leaf=15,
-                                      max_features="log2", max_leaf_nodes=10000, n_jobs=-1, random_state=56)
+        model = KNeighborsClassifier(n_neighbors=52)
 
         with measure_time('Training'):
+            #doKNN(X_LS, y_LS)
             model.fit(X_LS, y_LS)
-
         # PREDICTION
         TS = load_from_csv(args.ts)
         X_TS = create_fingerprints(TS["SMILES"].values)
@@ -181,24 +257,74 @@ if __name__ == '__main__':
         y_pred = model.predict_proba(X_TS)[:, 1]
 
         # Estimated AUC of the model
-        auc_predicted = 0.50  # it seems a bit pessimistic, right?
+        auc_predicted = 0.712  # it seems a bit pessimistic, right?
 
         # Making the submission file
         fname = make_submission(y_pred, auc_predicted,
-                                'toy_submission_GaussianNB')
+                                'KNN_52')
         print('Submission file "{}" successfully written'.format(fname))
+    elif method is "BKNN":
+        # -------------------------- Decision Tree --------------------------- #
+        # LEARNING
+        # Create fingerprint features and output
+        print("BAGGING CLASSIFIER\n")
+        with measure_time("Creating fingerprint"):
+            X_LS = create_fingerprints(LS["SMILES"].values)
+        y_LS = LS["ACTIVE"].values
 
-    else:
+        # Build the model
+        model = BaggingClassifier(base_estimator=KNeighborsClassifier(n_neighbors=52))
 
-        # ------------------------ Random Prediction ------------------------- #
+        with measure_time('Training'):
+            #doBaggingKnn(X_LS, y_LS)
+            model.fit(X_LS, y_LS)
+        # PREDICTION
+        TS = load_from_csv(args.ts)
+        X_TS = create_fingerprints(TS["SMILES"].values)
+
         # Predict
-        random_state = 0
-        random_state = check_random_state(random_state)
-        y_pred = random_state.rand(TS.shape[0])
+        y_pred = model.predict_proba(X_TS)[:, 1]
 
         # Estimated AUC of the model
-        auc_predicted = 0.50  # expected value for random guessing
+        auc_predicted = 0.712  # it seems a bit pessimistic, right?
 
         # Making the submission file
-        fname = make_submission(y_pred, auc_predicted, 'toy_submission_random')
+        fname = make_submission(y_pred, auc_predicted,
+                                'Bagging_KNN_useless')
         print('Submission file "{}" successfully written'.format(fname))
+    elif method is "DT":
+        # -------------------------- Decision Tree --------------------------- #
+        # LEARNING
+        # Create fingerprint features and output
+        print("DT CLASSIFIER\n")
+        with measure_time("Creating fingerprint"):
+            X_LS = create_fingerprints(LS["SMILES"].values)
+        y_LS = LS["ACTIVE"].values
+
+        # Build the model
+        model =  GradientBoostingClassifier(n_estimators=180)
+
+        with measure_time('Training'):
+            #doDecisionTree(X_LS, y_LS)
+            #estimator = AdaBoostClassifier(base_estimator=DecisionTreeClassifier(max_depth=15), n_estimators=200)
+            score = cross_val_score(model, X_LS, y_LS, cv=10, scoring="roc_auc")
+            print(np.mean(score))
+            model.fit(X_LS, y_LS)
+        # PREDICTION
+        TS = load_from_csv(args.ts)
+        X_TS = create_fingerprints(TS["SMILES"].values)
+
+        # Predict
+        y_pred = model.predict_proba(X_TS)[:, 1]
+
+        # Estimated AUC of the model
+        auc_predicted = 0.712  # it seems a bit pessimistic, right?
+
+        # Making the submission file
+        fname = make_submission(y_pred, auc_predicted,
+                                'Bagging_KNN_useless')
+        print('Submission file "{}" successfully written'.format(fname))
+    elif method is "EXTRAT":
+        pass
+    else:
+        print("Fail")

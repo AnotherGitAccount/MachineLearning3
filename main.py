@@ -66,6 +66,7 @@ def doRandomForest(X, y):
             score = cross_val_score(classifier, X, y, cv=3, scoring="roc_auc")
             t_score.append(np.mean(score))
         scores.append(t_score)
+    print(scores)
     return ts, depth, scores
     
            
