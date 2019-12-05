@@ -17,10 +17,17 @@ from sklearn.utils import check_random_state
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.model_selection import cross_val_score
 from sklearn.ensemble import BaggingClassifier
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.ensemble import AdaBoostClassifier
+
+from sklearn.naive_bayes import MultinomialNB
+
+from sklearn.svm import SVC
+
+from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
 
 from rdkit import Chem
 from rdkit.Chem import AllChem
@@ -232,7 +239,7 @@ if __name__ == '__main__':
     # Load test data
     TS = load_from_csv(args.ts)
 
-    method = "DT"
+    method = "RF"
 
     if method is "KNN":
         # -------------------------- Decision Tree --------------------------- #
@@ -324,7 +331,38 @@ if __name__ == '__main__':
         fname = make_submission(y_pred, auc_predicted,
                                 'Bagging_KNN_useless')
         print('Submission file "{}" successfully written'.format(fname))
-    elif method is "EXTRAT":
-        pass
+    elif method is "RF":
+        # -------------------------- Decision Tree --------------------------- #
+        # LEARNING
+        # Create fingerprint features and output
+        print("RandomForestClassifier\n")
+        with measure_time("Creating fingerprint"):
+            X_LS = create_fingerprints(LS["SMILES"].values)
+        y_LS = LS["ACTIVE"].values
+
+        # Build the model
+        model = AdaBoostClassifier(n_estimators=50, base_estimator=SVC(probability=True, gamma='scale'))
+        #model = SVC(kernel='sigmoid', probability=True, gamma='')
+
+        with measure_time('Training'):
+            #doDecisionTree(X_LS, y_LS)
+            #estimator = AdaBoostClassifier(base_estimator=DecisionTreeClassifier(max_depth=15), n_estimators=200)
+            score = cross_val_score(model, X_LS, y_LS, cv=10, scoring="roc_auc")
+            print(np.mean(score))
+            model.fit(X_LS, y_LS)
+        # PREDICTION
+        TS = load_from_csv(args.ts)
+        X_TS = create_fingerprints(TS["SMILES"].values)
+
+        # Predict
+        y_pred = model.predict_proba(X_TS)[:, 1]
+
+        # Estimated AUC of the model
+        auc_predicted = 0.712  # it seems a bit pessimistic, right?
+
+        # Making the submission file
+        fname = make_submission(y_pred, auc_predicted,
+                                'RF')
+        print('Submission file "{}" successfully written'.format(fname))
     else:
         print("Fail")

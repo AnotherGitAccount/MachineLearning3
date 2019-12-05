@@ -14,9 +14,15 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.utils import check_random_state
 from sklearn.preprocessing import LabelBinarizer
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold
-from sklearn.metrics import roc_curve, precision_recall_curve, auc, make_scorer, recall_score, accuracy_score, precision_score, confusion_matrix
+from sklearn.metrics import roc_auc_score, precision_recall_curve, auc, make_scorer, recall_score, accuracy_score, precision_score, confusion_matrix
 
+from sklearn.gaussian_process import GaussianProcessClassifier
+
+from sklearn.neural_network import MLPClassifier
+
+from sklearn.svm import SVC
 import matplotlib.pyplot as plt
 
 from rdkit import Chem
@@ -24,19 +30,14 @@ from rdkit.Chem import AllChem
 
 
 # Build the model
-model = RandomForestClassifier(n_jobs=-1)
+model = RandomForestClassifier()
 
 param_grid = {
-    'min_samples_split': [3, 5, 10], 
-    'n_estimators' : [1, 10, 50, 100],
-    'max_depth': [3, 5, 15, 25],
-    'max_features': [3, 5, 10, 20, "log2"]
-}
-
-scorers = {
-    'precision_score': make_scorer(precision_score),
-    'recall_score': make_scorer(recall_score),
-    'accuracy_score': make_scorer(accuracy_score)
+    'min_samples_split': [3], 
+    'n_estimators' : [300, 400, 1000],
+    'max_depth': [100, 300],
+    'max_features': [5, "log2", "sqrt"],
+    'bootstrap' : [True, False]
 }
 
 @contextmanager
@@ -164,21 +165,21 @@ def grid_search_wrapper(X_LS, y_LS, X_test, y_test, refit_score='precision_score
     fits a GridSearchCV classifier using refit_score for optimization
     prints classifier performance metrics
     """
-    skf = StratifiedKFold(n_splits=5)
+    skf = StratifiedKFold(n_splits=10)
     grid_search = GridSearchCV(model, param_grid, refit=True, cv=skf, return_train_score=True, n_jobs=-1, scoring="roc_auc")
     grid_search.fit(X_LS, y_LS)
     print("lol")
     # make the predicctions
-    y_pred = grid_search.predict(X_test)
+    y_pred = grid_search.predict_proba(X_test)
+    print(y_pred.shape, y_test.shape)
     print("lol2")
     print('Best params for {}'.format(refit_score))
     print(grid_search.best_params_)
 
-    print("The accuracy is: " , accuracy_score(y_pred, y_test))
+    print(roc_auc_score(y_test, y_pred[:,1]))
     # confusion matrix on the test data.
     print('\nConfusion matrix of Random Forest optimized for {} on the test data:'.format(refit_score))
-    print(pd.DataFrame(confusion_matrix(y_test, y_pred),
-                 columns=['pred_neg', 'pred_pos'], index=['neg', 'pos']))
+    #print(pd.DataFrame(confusion_matrix(y_test, y_pred), columns=['pred_neg', 'pred_pos'], index=['neg', 'pos']))
 
     return grid_search
 
@@ -204,14 +205,14 @@ if __name__ == '__main__':
     y_LS = LS["ACTIVE"].values
 
     with measure_time('Training'):
-        (X_train, X_test, y_train, y_test) = train_test_split(X_LS, y_LS, random_state=42, test_size=0.95, train_size=0.05)
+        (X_train, X_test, y_train, y_test) = train_test_split(X_LS, y_LS, random_state=42, test_size=0.85, train_size=0.15)
         grid_search = grid_search_wrapper(X_train, y_train, X_test, y_test, refit_score='accuracy_score')
         results = pd.DataFrame(grid_search.cv_results_)
-        print(results)
+        #print(results)
         results = results.sort_values(by='mean_test_score', ascending=False)
-        print(results[['mean_train_score', 'mean_test_score',
-                 'param_max_depth', 'param_max_features', 'param_min_samples_split',
-                 'param_n_estimators']].head())
+        print(results[['mean_test_score', 'mean_train_score',
+                 'param_solver', 'param_activation', 'param_learning_rate',
+                 'param_hidden_layer_sizes', 'param_alpha']].head())
         #model.fit(X_LS, y_LS)
     exit()
     # PREDICTION
