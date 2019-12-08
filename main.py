@@ -110,4 +110,3 @@ if __name__ == "__main__":
     elif METHOD == "MLP":
         layers, neurones, scores = doMLP(X_LS, Y_LS)
         print(scores)
-      
