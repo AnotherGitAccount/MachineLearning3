@@ -33,6 +33,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import cross_val_score, cross_validate
 from sklearn.metrics import roc_auc_score
+from sklearn.feature_selection import SelectFromModel
 
 from imblearn.over_sampling import ADASYN, SMOTE, RandomOverSampler
 from imblearn.under_sampling import TomekLinks, RandomUnderSampler, EditedNearestNeighbours, CondensedNearestNeighbour
@@ -292,7 +293,7 @@ def third_test(X_train, y_train, X_test, y_test):
 
     print("Logistic Regression")
     logistic_pipeline = make_pipeline(
-        RandomUnderSampler(), LogisticRegressionCV())
+        SMOTE(k_neighbors=150), LogisticRegressionCV())
     scores = cross_validate(logistic_pipeline, X_train, y_train, cv=10, scoring=(
         'roc_auc', 'average_precision'), return_estimator=True)
     print(scores['test_roc_auc'].mean(),
@@ -306,7 +307,7 @@ def third_test(X_train, y_train, X_test, y_test):
 
     print("Random Forest Tree")
     forest_pipeline = make_pipeline(
-        RandomUnderSampler(), RandomForestClassifier(n_estimators=500))
+        SMOTE(k_neighbors=25), KNeighborsClassifier(n_neighbors=52))
     scores = cross_validate(forest_pipeline, X_train, y_train, cv=10, scoring=(
         'roc_auc', 'average_precision'), return_estimator=True)
     print(scores['test_roc_auc'].mean(),
@@ -321,20 +322,19 @@ def fourth_test(X_train, y_train, X_test, y_test):
     print("Test with BalancedRandomForestClassifier or BalancedBaggingClassifier\n")
 
     print("BalancedRandomForestClassifier")
-    scores = cross_validate(BalancedRandomForestClassifier(max_depth=None, n_estimators=500, random_state=0, n_jobs=2, max_features='log2'), X_train, y_train, cv=10, scoring=('roc_auc', 'average_precision'), return_estimator=True)
+    scores = cross_validate(BalancedRandomForestClassifier(max_depth=None, n_estimators=500, random_state=0, n_jobs=2, max_features='log2', oob_score=False), X_train, y_train, cv=10, scoring=('roc_auc', 'average_precision'), return_estimator=True)
     print(scores['test_roc_auc'].mean(),
           scores['test_average_precision'].mean())
     log_model = scores['estimator'][np.argmax(scores['test_roc_auc'])]
     y_log_pred = log_model.predict(X_test)
     conf_mat = confusion_matrix(y_true=y_test, y_pred=y_log_pred)
     print("confusion_matrix:\n", conf_mat)
-
     print()
 
     print("BalancedBaggingClassifier")
     tree = DecisionTreeClassifier(max_features='auto')
     resample_bagging = BalancedBaggingClassifier(
-        base_estimator=tree, n_estimators=100, random_state=0, n_jobs=2)
+        base_estimator=tree, n_estimators=100, random_state=0, n_jobs=2, oob_score=True)
     scores = cross_validate(resample_bagging, X_train, y_train, cv=10, scoring=(
         'roc_auc', 'average_precision'), return_estimator=True)
     print(scores['test_roc_auc'].mean(),
@@ -344,8 +344,9 @@ def fourth_test(X_train, y_train, X_test, y_test):
     conf_mat = confusion_matrix(y_true=y_test, y_pred=y_rf_pred)
     print("confusion_matrix:\n", conf_mat)
 
+    """
     print("EasyEnsembleClassifier")
-    tree = DecisionTreeClassifier(max_features='auto')
+    tree = DecisionTreeClassifier(max_features='auto', max_depth=1)
     ada_tree = AdaBoostClassifier(base_estimator=tree)
     resample_easy = EasyEnsembleClassifier(
         base_estimator=ada_tree, n_estimators=100, random_state=0, n_jobs=2)
@@ -357,6 +358,7 @@ def fourth_test(X_train, y_train, X_test, y_test):
     y_rf_pred = rf_model.predict(X_test)
     conf_mat = confusion_matrix(y_true=y_test, y_pred=y_rf_pred)
     print("confusion_matrix:\n", conf_mat)
+    """
 
 def fifth_test(X_train, y_train, X_test, y_test):
     print("Test with Edited/Condensed Nearest Neighbors, change the pipeline if you want to change\n")
@@ -467,8 +469,14 @@ if __name__ == '__main__':
 
     # Build the model (Random here -> 0.73015 on the platform)
     #model = get_RF_model()
-    model = BalancedRandomForestClassifier(max_depth=None, n_estimators=25000, random_state=0, n_jobs=-1, max_features='log2')
-
+    tree = DecisionTreeClassifier(max_features='log2')
+    model = BalancedBaggingClassifier(base_estimator=tree, n_estimators=100, random_state=0, n_jobs=-1)
+    """
+    select = SelectFromModel(RandomForestClassifier(random_state=1), threshold='mean')
+    select.fit(X_LS, y_LS)
+    X_LS = select.transform(X_LS)
+    print(X_LS.shape)
+    """
     # Test with and without sampling
     X_train, X_test, y_train, y_test = train_test_split(
         X_LS, y_LS, test_size=0.25, train_size=0.75, random_state=1)
@@ -478,8 +486,8 @@ if __name__ == '__main__':
     # ADD CODE HERE
     #first_test(X_train, y_train, X_test, y_test)
     #second_test(X_train, y_train, X_test, y_test)
-    #third_test(X_train, y_train, X_test, y_test)
-    fourth_test(X_train, y_train, X_test, y_test)
+    third_test(X_train, y_train, X_test, y_test)
+    #fourth_test(X_train, y_train, X_test, y_test)
     #fifth_test(X_train, y_train, X_test, y_test)
     #sixth_test(X_train, y_train, X_test, y_test)
 
@@ -500,8 +508,8 @@ if __name__ == '__main__':
     y_pred = model.predict_proba(X_TS)[:, 1]
 
     # Estimated AUC of the model
-    auc_predicted = 0.71  # it seems a bit pessimistic, right?
+    auc_predicted = 0.75  # it seems a bit pessimistic, right?
 
     # Making the submission file
-    fname = make_submission(y_pred, auc_predicted, 'test_over_sampling_DT')
+    fname = make_submission(y_pred, auc_predicted, 'Bagging_model')
     print('Submission file "{}" successfully written'.format(fname))
