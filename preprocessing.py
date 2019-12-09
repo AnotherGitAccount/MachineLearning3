@@ -27,6 +27,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.linear_model import LogisticRegressionCV
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
+from sklearn.naive_bayes import MultinomialNB
 
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix
@@ -34,9 +35,9 @@ from sklearn.model_selection import cross_val_score, cross_validate
 from sklearn.metrics import roc_auc_score
 
 from imblearn.over_sampling import ADASYN, SMOTE, RandomOverSampler
-from imblearn.under_sampling import TomekLinks, RandomUnderSampler
+from imblearn.under_sampling import TomekLinks, RandomUnderSampler, EditedNearestNeighbours, CondensedNearestNeighbour
 from imblearn.combine import SMOTETomek
-from imblearn.ensemble import BalancedRandomForestClassifier, BalancedBaggingClassifier
+from imblearn.ensemble import BalancedRandomForestClassifier, BalancedBaggingClassifier, EasyEnsembleClassifier
 from imblearn.pipeline import make_pipeline
 
 
@@ -223,14 +224,14 @@ def do_sampling_research(X_train, y_train, X_test, y_test):
     # Without sampling
     get_info_features(y_train, pd.DataFrame(
         {'ACTIVE': y_train}), save="Count_before.pdf")
-    display_confusion_matrix(RandomForestClassifier(), X_train, y_train, X_test, y_test,
+    display_confusion_matrix(RandomForestClassifier(n_estimators=1000), X_train, y_train, X_test, y_test,
                              save="confusion_matrix_before.pdf", title="Confusion Matrix before sampling")
 
     print("\nSecond test with sampling:")
     # With sampling
-    X, y = SMOTETomek(n_jobs=-1).fit_sample(X_train, y_train)
+    X, y = RandomUnderSampler().fit_sample(X_train, y_train)
     get_info_features(y, pd.DataFrame({'ACTIVE': y}), save="Count_after.pdf")
-    display_confusion_matrix(RandomForestClassifier(), X, y, X_test, y_test,
+    display_confusion_matrix(RandomForestClassifier(n_estimators=1000), X, y, X_test, y_test,
                              save="confusion_matrix_after.pdf", title="Confusion Matrix after sampling")
 
 
@@ -285,11 +286,13 @@ def second_test(X_train, y_train, X_test, y_test):
     conf_mat = confusion_matrix(y_true=y_test, y_pred=y_rf_pred)
     print("confusion_matrix:\n", conf_mat)
 
+
 def third_test(X_train, y_train, X_test, y_test):
     print("Test with Random under/over sampling, change the pipeline if you want to change\n")
 
     print("Logistic Regression")
-    logistic_pipeline = make_pipeline(RandomUnderSampler(), LogisticRegressionCV())
+    logistic_pipeline = make_pipeline(
+        RandomUnderSampler(), LogisticRegressionCV())
     scores = cross_validate(logistic_pipeline, X_train, y_train, cv=10, scoring=(
         'roc_auc', 'average_precision'), return_estimator=True)
     print(scores['test_roc_auc'].mean(),
@@ -302,7 +305,8 @@ def third_test(X_train, y_train, X_test, y_test):
     print()
 
     print("Random Forest Tree")
-    forest_pipeline = make_pipeline(RandomUnderSampler(), RandomForestClassifier(n_estimators=500))
+    forest_pipeline = make_pipeline(
+        RandomUnderSampler(), RandomForestClassifier(n_estimators=500))
     scores = cross_validate(forest_pipeline, X_train, y_train, cv=10, scoring=(
         'roc_auc', 'average_precision'), return_estimator=True)
     print(scores['test_roc_auc'].mean(),
@@ -312,12 +316,12 @@ def third_test(X_train, y_train, X_test, y_test):
     conf_mat = confusion_matrix(y_true=y_test, y_pred=y_rf_pred)
     print("confusion_matrix:\n", conf_mat)
 
+
 def fourth_test(X_train, y_train, X_test, y_test):
     print("Test with BalancedRandomForestClassifier or BalancedBaggingClassifier\n")
 
     print("BalancedRandomForestClassifier")
-    scores = cross_validate(BalancedRandomForestClassifier(n_estimators=2000, random_state=0, n_jobs=2), X_train, y_train, cv=10, scoring=(
-        'roc_auc', 'average_precision'), return_estimator=True)
+    scores = cross_validate(BalancedRandomForestClassifier(max_depth=None, n_estimators=500, random_state=0, n_jobs=2, max_features='log2'), X_train, y_train, cv=10, scoring=('roc_auc', 'average_precision'), return_estimator=True)
     print(scores['test_roc_auc'].mean(),
           scores['test_average_precision'].mean())
     log_model = scores['estimator'][np.argmax(scores['test_roc_auc'])]
@@ -329,7 +333,8 @@ def fourth_test(X_train, y_train, X_test, y_test):
 
     print("BalancedBaggingClassifier")
     tree = DecisionTreeClassifier(max_features='auto')
-    resample_bagging = BalancedBaggingClassifier(base_estimator=tree, n_estimators=500, random_state=0, n_jobs=2)
+    resample_bagging = BalancedBaggingClassifier(
+        base_estimator=tree, n_estimators=100, random_state=0, n_jobs=2)
     scores = cross_validate(resample_bagging, X_train, y_train, cv=10, scoring=(
         'roc_auc', 'average_precision'), return_estimator=True)
     print(scores['test_roc_auc'].mean(),
@@ -337,7 +342,100 @@ def fourth_test(X_train, y_train, X_test, y_test):
     rf_model = scores['estimator'][np.argmax(scores['test_roc_auc'])]
     y_rf_pred = rf_model.predict(X_test)
     conf_mat = confusion_matrix(y_true=y_test, y_pred=y_rf_pred)
-    print("confusion_matrix:\n", conf_mat) 
+    print("confusion_matrix:\n", conf_mat)
+
+    print("EasyEnsembleClassifier")
+    tree = DecisionTreeClassifier(max_features='auto')
+    ada_tree = AdaBoostClassifier(base_estimator=tree)
+    resample_easy = EasyEnsembleClassifier(
+        base_estimator=ada_tree, n_estimators=100, random_state=0, n_jobs=2)
+    scores = cross_validate(resample_easy, X_train, y_train, cv=10, scoring=(
+        'roc_auc', 'average_precision'), return_estimator=True)
+    print(scores['test_roc_auc'].mean(),
+          scores['test_average_precision'].mean())
+    rf_model = scores['estimator'][np.argmax(scores['test_roc_auc'])]
+    y_rf_pred = rf_model.predict(X_test)
+    conf_mat = confusion_matrix(y_true=y_test, y_pred=y_rf_pred)
+    print("confusion_matrix:\n", conf_mat)
+
+def fifth_test(X_train, y_train, X_test, y_test):
+    print("Test with Edited/Condensed Nearest Neighbors, change the pipeline if you want to change\n")
+
+    print("Logistic Regression")
+    logistic_pipeline = make_pipeline(
+        EditedNearestNeighbours(n_neighbors=5), LogisticRegressionCV())
+    scores = cross_validate(logistic_pipeline, X_train, y_train, cv=10, scoring=(
+        'roc_auc', 'average_precision'), return_estimator=True)
+    print(scores['test_roc_auc'].mean(),
+          scores['test_average_precision'].mean())
+    log_model = scores['estimator'][np.argmax(scores['test_roc_auc'])]
+    y_log_pred = log_model.predict(X_test)
+    conf_mat = confusion_matrix(y_true=y_test, y_pred=y_log_pred)
+    print("confusion_matrix:\n", conf_mat)
+
+    print()
+
+    print("Random Forest Tree")
+    forest_pipeline = make_pipeline(
+        EditedNearestNeighbours(n_neighbors=5), RandomForestClassifier(n_estimators=500))
+    scores = cross_validate(forest_pipeline, X_train, y_train, cv=10, scoring=(
+        'roc_auc', 'average_precision'), return_estimator=True)
+    print(scores['test_roc_auc'].mean(),
+          scores['test_average_precision'].mean())
+    rf_model = scores['estimator'][np.argmax(scores['test_roc_auc'])]
+    y_rf_pred = rf_model.predict(X_test)
+    conf_mat = confusion_matrix(y_true=y_test, y_pred=y_rf_pred)
+    print("confusion_matrix:\n", conf_mat)
+
+def sixth_test(X_train, y_train, X_test, y_test):
+    print("Diminuer le nombre de feature numéroté inactive, ensuite SMOTE/ADASYN etc")
+    data = pd.DataFrame(X_train)
+    data['Target'] = y_train
+    inactive_index = data[data['Target'] == 0].index
+    length = len(inactive_index)
+    drop_indices = np.random.choice(inactive_index, round(0.66*length), replace=False)
+    data = data.drop(drop_indices)
+    y_train = data.Target.values
+    data = data.drop("Target", axis=1)
+    X_train = data.values
+    """
+    print("BalancedRandomForestClassifier")
+    scores = cross_validate(BalancedRandomForestClassifier(max_depth=None, n_estimators=300, random_state=0, n_jobs=2, max_features='log2'), X_train, y_train, cv=10, scoring=('roc_auc', 'average_precision'), return_estimator=True)
+    print(scores['test_roc_auc'].mean(),
+          scores['test_average_precision'].mean())
+    log_model = scores['estimator'][np.argmax(scores['test_roc_auc'])]
+    y_log_pred = log_model.predict(X_test)
+    conf_mat = confusion_matrix(y_true=y_test, y_pred=y_log_pred)
+    print("confusion_matrix:\n", conf_mat)
+
+    print()
+
+    print("BalancedBaggingClassifier")
+    tree = DecisionTreeClassifier(max_features='auto')
+    resample_bagging = BalancedBaggingClassifier(
+        base_estimator=tree, n_estimators=100, random_state=0, n_jobs=2)
+    scores = cross_validate(resample_bagging, X_train, y_train, cv=10, scoring=(
+        'roc_auc', 'average_precision'), return_estimator=True)
+    print(scores['test_roc_auc'].mean(),
+          scores['test_average_precision'].mean())
+    rf_model = scores['estimator'][np.argmax(scores['test_roc_auc'])]
+    y_rf_pred = rf_model.predict(X_test)
+    conf_mat = confusion_matrix(y_true=y_test, y_pred=y_rf_pred)
+    print("confusion_matrix:\n", conf_mat)
+    """
+    print("EasyEnsembleClassifier")
+    tree = DecisionTreeClassifier(max_features='auto')
+    ada_tree = AdaBoostClassifier(base_estimator=LogisticRegression())
+    resample_easy = EasyEnsembleClassifier(
+        base_estimator=ada_tree, n_estimators=10, random_state=0, n_jobs=2, sampling_strategy='auto')
+    scores = cross_validate(resample_easy, X_train, y_train, cv=10, scoring=(
+        'roc_auc', 'average_precision'), return_estimator=True)
+    print(scores['test_roc_auc'].mean(),
+          scores['test_average_precision'].mean())
+    rf_model = scores['estimator'][np.argmax(scores['test_roc_auc'])]
+    y_rf_pred = rf_model.predict(X_test)
+    conf_mat = confusion_matrix(y_true=y_test, y_pred=y_rf_pred)
+    print("confusion_matrix:\n", conf_mat)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Make a toy submission")
@@ -369,7 +467,7 @@ if __name__ == '__main__':
 
     # Build the model (Random here -> 0.73015 on the platform)
     #model = get_RF_model()
-    model = get_logreg_model()
+    model = BalancedRandomForestClassifier(max_depth=None, n_estimators=25000, random_state=0, n_jobs=-1, max_features='log2')
 
     # Test with and without sampling
     X_train, X_test, y_train, y_test = train_test_split(
@@ -382,6 +480,8 @@ if __name__ == '__main__':
     #second_test(X_train, y_train, X_test, y_test)
     #third_test(X_train, y_train, X_test, y_test)
     fourth_test(X_train, y_train, X_test, y_test)
+    #fifth_test(X_train, y_train, X_test, y_test)
+    #sixth_test(X_train, y_train, X_test, y_test)
 
     #X, y = SMOTETomek(n_jobs=-1).fit_sample(X_LS, y_LS)
     #do_cv_RF(X, y)
